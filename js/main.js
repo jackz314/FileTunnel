@@ -119,18 +119,35 @@ fileInput.addEventListener('change', handleFileInputChange, false);//todo the ab
 ////////////////////////////////////////////////
 //Socket stuff
 //todo temporary method to get roomName name, update later
-let roomName = prompt('Enter a Tunnel code:');
-console.log('Tunnel code:' + roomName);
+let tunnelCode = prompt('Enter a Tunnel code:');
+console.log('Tunnel code:' + tunnelCode);
 
 //verify roomName name and join, if invalid name, generate a random name
 
-if(roomName === null || roomName.trim() === ''){
-  roomName = makeRandomRoomId();
+if(tunnelCode === null || tunnelCode.trim() === ''){
+  tunnelCode = makeRandomRoomId();
 }
 
-roomLabel.textContent = 'Tunnel code: ' + roomName;
+roomLabel.textContent = 'Tunnel code: ' + tunnelCode;
+
+roomLabel.onclick = function(){
+  copyToClipboard(tunnelCode);
+  const snackbar = document.getElementById("snackbar");
+  snackbar.textContent = 'Copied TunnelCode \"' + tunnelCode + '\" to clipboard!';
+  snackbar.className = 'show';//show snackbar and disappear 3 seconds later
+  setTimeout(function(){ snackbar.className = snackbar.className.replace("show", ""); }, 3000);
+};
 
 let socket = io.connect();
+
+function copyToClipboard(str) {
+  const el = document.createElement('textarea');
+  el.value = str;
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+}
 
 function makeRandomRoomId() {
   var text = "";
@@ -142,8 +159,8 @@ function makeRandomRoomId() {
   return text;
 }
 
-socket.emit('create or join', roomName);
-console.log('Attempted to create or  join roomName', roomName);
+socket.emit('create or join', tunnelCode);
+console.log('Attempted to create or  join roomName', tunnelCode);
 
 
 //start of socket events
@@ -430,7 +447,6 @@ function sendFile() {
 
   // Handle 0 size files.
   if (file.size === 0) {
-    byterateDiv.innerHTML = '';
     statusText.textContent = 'File is empty, please select a non-empty file';
     console.log('selected file is empty');
     fileQueue.shift();//skip to the next one
@@ -447,14 +463,18 @@ function sendFile() {
   }else{
     console.log('remote side didn\'t allow transfer yet, waiting for remote permission...');
     statusText.textContent = 'Files ready, waiting for remote side to accept files...';
-    postSendFile();
+    willKeepSending = false;
     return;
   }
   
   statusText.textContent = 'Sending file';
 
+  prepareStatisticStuff();
+  
   willKeepSending = true;
+
   sendProgress.max = file.size;
+  sendProgress.style.display = '';//hide send progress bar
 
   const chunkSize = 16384 * 2;//todo temp
   fileReader = new FileReader();
@@ -484,9 +504,12 @@ function sendFile() {
 }
 
 function postSendFile(){
+  console.log('post send file');
+  byterateDiv.innerHTML = '';
   willKeepSending = false;
   statusText.textContent = 'Transfer complete, waiting for more files.';
   abortButton.style.display = 'none';//hide abort btn
+  sendProgress.style.display = 'none';//hide send progress bar
 }
 
 function prepareReceiveFile() {
@@ -499,7 +522,14 @@ function prepareReceiveFile() {
     URL.revokeObjectURL(downloadAnchor.href);
     downloadAnchor.removeAttribute('href');
   }
-  receiveProgress.max = remoteFileMetaList[0].size;
+  if(remoteFileMetaList.length > 0){
+    receiveProgress.style.display = '';//show receive progress bar
+    receiveProgress.max = remoteFileMetaList[0].size;
+    prepareStatisticStuff();
+  }
+}
+
+function prepareStatisticStuff(){
   timestampStart = (new Date()).getTime();
   timestampPrev = timestampStart;
   statsInterval = setInterval(displayStats, 500);
@@ -517,6 +547,7 @@ function onReceiveFromTransferChannel(event) {
   }
   if(event.data === 'transfer_done'){//transfer of one file is complete
     console.log('File transfer complete');
+    receiveProgress.style.display = 'none';//show receive progress bar
     abortButton.style.display = 'none';//hide abort btn
     if (receivedSize === remoteFileMetaList[0].size) {//verify again that we got all the content of the file
       console.log('File' + remoteFileMetaList.name + ' transfer complete');
@@ -539,7 +570,7 @@ function onReceiveFromTransferChannel(event) {
       const byterate = Math.round(receivedSize /
         ((new Date()).getTime() - timestampStart));
       byterateDiv.innerHTML
-        += `Average Speed: ${byterate / 1000} MB/s (max: ${byterateMax / 1000} MB/s)\n`;
+        = `Average Speed: ${byterate / 1000} MB/s (max: ${byterateMax / 1000} MB/s)\n`;
       if (statsInterval) {
         clearInterval(statsInterval);
         statsInterval = null;
@@ -624,7 +655,7 @@ async function displayStats() {
       const bytesNow = activeCandidatePair.bytesReceived;
       const byterate = Math.round((bytesNow - bytesPrev)/
         (activeCandidatePair.timestamp - timestampPrev));
-      byterateDiv.innerHTML = `<strong>Current Speed:</strong> ${byterate / 1000} MB/s`;
+      byterateDiv.innerHTML = `Current Speed: ${byterate / 1000} MB/s`;
       timestampPrev = activeCandidatePair.timestamp;
       bytesPrev = bytesNow;
       if (byterate > byterateMax) {
