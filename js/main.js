@@ -560,8 +560,8 @@ function prepareStatisticStuff(){
   console.log('preparing statistic stuff');
   timestampStart = (new Date()).getTime();
   timestampPrev = timestampStart;
-  statsInterval = setInterval(displayStats, 500);
-  displayStats();
+  //todo temp
+  
 }
 
 function onReceiveFromTransferChannel(event) {
