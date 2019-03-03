@@ -63,7 +63,7 @@
     <section>
       <div >
         <div class="drop-zone" id="drop-zone">
-            Drag and drop files here
+            Click to select/Drag and drop files here
         </div>
         <!-- invisible file input for manual file selection-->
         <input id="fileInput" type="file" multiple="multiple" style="display:none;" />
@@ -81,14 +81,12 @@
       </div>
 
       <div class="progress" id="sendProgressContainer" style="display:none;">
-        <div id="sendCountProgress" style="display:none;">0/0</div>
-        <div class="label">Send progress: </div>
+        <div class="label" id="sendProgressLabel">Send (0)</div>
         <progress id="sendProgress" max="0" value="0"></progress>
       </div>
 
       <div class="progress" id="receiveProgressContainer" style="display:none;">
-        <div id="receiveCountProgress" style="display:none;">0/0</div>
-        <div class="label">Receive progress: </div>
+        <div class="label" id="receiveProgressLabel">Receive (0)</div>
         <progress id="receiveProgress" max="0" value="0"></progress>
       </div>
 

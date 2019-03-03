@@ -25,8 +25,8 @@ const abortButton = document.querySelector('button#abortButton');
 const downloadAnchor = document.querySelector('a#download');
 const sendProgress = document.querySelector('progress#sendProgress');
 const receiveProgress = document.querySelector('progress#receiveProgress');
-const sendCountProgress = document.getElementById('sendCountProgress');
-const receiveCountProgress = document.getElementById('receiveCountProgress');
+const sendProgressLabel = document.getElementById('sendProgressLabel');
+const receiveProgressLabel = document.getElementById('receiveProgressLabel');
 const sendProgressContainer = document.getElementById('sendProgressContainer');
 const receiveProgressContainer = document.getElementById('receiveProgressContainer');
 const sendFileButton = document.querySelector('button#sendFile');
@@ -39,12 +39,24 @@ const statusText = document.getElementById('status-text');
 let receiveBuffer = [];
 let receivedSize = 0;
 
+let sendFileOffset = 0;
+
 //calculate speed of transfer
 let bytesPrev = 0;
 let timestampPrev = 0;
 let timestampStart;
 let statsInterval = null;
+let statsIntervalAcc = null;
 let byterateMax = 0;
+let sendSpeed = 0;
+let receiveSpeed = 0;
+let sendMaxSpeed = 0;
+let receiveMaxSpeed = 0;
+let sendTime = 0;
+let receiveTime = 0;
+let sendPrevOffset = 0;
+let receivePrevSize = 0;
+const byteToMB = 1048576;
 
 //webrtc config
 let pcConfig = {
@@ -109,6 +121,9 @@ function addToFileQueue(file) {
   //send over the file meta info
   console.log('file meta info: ' + file.size + ' ' + file.name);
   sendChannelMsg('[file-meta]' + file.size + '|' + file.name);
+  if(willKeepSending){
+    sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
+  }
   if(!willKeepSending && isDataChannelOK){//only manually start again when it's certain that sendFile() won't call itself again and when the connection is OK
     sendFile();
   }
@@ -265,6 +280,18 @@ function resetTransferStuff(){
   receiveProgress.value = 0;
   receiveProgress.max = 0;
   receiveProgressContainer.style.display = 'none';
+
+  //statistic stuff
+  // statsIntervalAcc = null;
+  byterateMax = 0;
+  // sendSpeed = 0;
+  // receiveSpeed = 0;
+  // sendMaxSpeed = 0;
+  // receiveMaxSpeed = 0;
+  // sendTime = 0;
+  // receiveTime = 0;
+  // sendPrevOffset = 0;
+  // receivePrevSize = 0;
 }
 
 async function handleFileInputChange() {
@@ -446,6 +473,8 @@ function stopPc() {
 function handleRemoteDisconnect() {
   console.log('Session terminated by remote end.');
   stopPc();
+  statusText.textContent = 'Remote user left, waiting for someone to join...';
+  resetTransferStuff();
 }
 
 function sendChannelMsg(msg){
@@ -488,9 +517,12 @@ function sendFile() {
     return;
   }
   
-  statusText.textContent = 'Sending file';
+  statusText.textContent = 'Sending file...';
+  byterateDiv.innerHTML = '';
 
-  prepareStatisticStuff();
+  sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
+
+  // prepareStatisticStuff();//not working well
   
   willKeepSending = true;
 
@@ -499,7 +531,7 @@ function sendFile() {
 
   const chunkSize = 16384 * 2;//todo temp
   fileReader = new FileReader();
-  let offset = 0;
+  sendFileOffset = 0;
   fileReader.addEventListener('error', error => console.error('Error reading file:', error));
   fileReader.addEventListener('abort', event => console.log('File reading aborted:', event));
   fileReader.addEventListener('load', e => {
@@ -509,11 +541,11 @@ function sendFile() {
     }
     console.log('FileRead.onload ', e);
     transferChannel.send(e.target.result);
-    offset += e.target.result.byteLength;
-    sendProgress.value = offset;
-    console.log('send progress: ', offset, sendProgress.value);
-    if (offset < file.size) {
-      readSlice(offset);
+    sendFileOffset += e.target.result.byteLength;
+    sendProgress.value = sendFileOffset;
+    console.log('send progress: ', sendFileOffset, sendProgress.value);
+    if (sendFileOffset < file.size) {
+      readSlice(sendFileOffset);
     }else{
       //transfer for this file is done, remove this one and continue to the next one
       fileQueue.shift();
@@ -523,7 +555,7 @@ function sendFile() {
   });
   const readSlice = o => {
     console.log('readSlice ', o);
-    const slice = file.slice(offset, o + chunkSize);
+    const slice = file.slice(sendFileOffset, o + chunkSize);
     fileReader.readAsArrayBuffer(slice);
   };
   readSlice(0);//start first
@@ -541,6 +573,7 @@ function postSendFile(){
 function prepareReceiveFile() {
   console.log('Preparing to receive file');
   receivedSize = 0;
+  abortButton.style.display = '';
   //byterateMax = 0;
   downloadAnchor.textContent = '';//clear previous download info stuff
   downloadAnchor.removeAttribute('download');
@@ -549,6 +582,7 @@ function prepareReceiveFile() {
     downloadAnchor.removeAttribute('href');
   }
   if(remoteFileMetaList.length > 0){
+    receiveProgressLabel.textContent = 'Receive (' + remoteFileMetaList.length + ')';
     statusText.textContent = 'Receiving file...';
     receiveProgressContainer.style.display = '';//show receive progress bar
     receiveProgress.max = remoteFileMetaList[0].size;
@@ -561,8 +595,35 @@ function prepareStatisticStuff(){
   timestampStart = (new Date()).getTime();
   timestampPrev = timestampStart;
   //todo temp
-  
+  statsInterval = setInterval(displayStats, 500);
+  displayStats();
 }
+
+// function displayStatsSend(){
+//   console.log('display stats acc');
+//   sendSpeed = Math.abs((sendFileOffset - sendPrevOffset)/0.1);//bytes/sec
+//   // receiveSpeed = Math.abs((receivedSize - receivePrevSize)/0.1);
+//   sendTime += 0.1;//sec
+//   // receiveTime += 0.1;//sec
+//   if(sendSpeed > sendMaxSpeed) sendMaxSpeed = sendSpeed;
+//   // if(receiveSpeed > receiveMaxSpeed) receiveMaxSpeed = receiveSpeed;
+//   byterateDiv.innerHTML
+//   = `Upload Speed: ${sendSpeed/byteToMB} MB/s. Average Upload Speed: ${(sendTime/sendFileOffset) / byteToMB} MB/s (max: ${sendMaxSpeed / byteToMB} MB/s)\n
+//   Download Speed: ${receiveSpeed/byteToMB} MB/s. Average Download Speed: ${(receiveTime/receivedSize) / byteToMB} MB/s (max: ${receiveMaxSpeed / byteToMB} MB/s)`;
+// }
+
+// function displayStatsReceive(){
+//   console.log('display stats acc');
+//   // sendSpeed = Math.abs((sendFileOffset - sendPrevOffset)/0.1);//bytes/sec
+//   receiveSpeed = Math.abs((receivedSize - receivePrevSize)/0.1);
+//   // sendTime += 0.1;//sec
+//   receiveTime += 0.1;//sec
+//   // if(sendSpeed > sendMaxSpeed) sendMaxSpeed = sendSpeed;
+//   if(receiveSpeed > receiveMaxSpeed) receiveMaxSpeed = receiveSpeed;
+//   byterateDiv.innerHTML
+//   = `Upload Speed: ${sendSpeed/byteToMB} MB/s. Average Upload Speed: ${(sendTime/sendFileOffset) / byteToMB} MB/s (max: ${sendMaxSpeed / byteToMB} MB/s)\n
+//   Download Speed: ${receiveSpeed/byteToMB} MB/s. Average Download Speed: ${(receiveTime/receivedSize) / byteToMB} MB/s (max: ${receiveMaxSpeed / byteToMB} MB/s)`;
+// }
 
 function onReceiveFromTransferChannel(event) {
   if(!allowedTransfer){
@@ -598,10 +659,12 @@ function onReceiveFromTransferChannel(event) {
       const byterate = Math.round(receivedSize /
         ((new Date()).getTime() - timestampStart));
       byterateDiv.innerHTML
-        = `Average Speed: ${byterate / 1000} MB/s (max: ${byterateMax / 1000} MB/s)\n`;
+        = `Average Speed: ${(byterate / 1024).toFixed(3)} MB/s (max: ${(byterateMax / 1024).toFixed(3)} MB/s)\n`;
       if (statsInterval) {
         clearInterval(statsInterval);
         statsInterval = null;
+        // clearInterval(statsIntervalAcc);
+        // statsIntervalAcc = null;
       }
     }else{
       console.log('channel signals file complete, but meta data doesn\'t match, something is wrong');
@@ -659,8 +722,7 @@ function onReceiveFromMsgChannel(event){
     if(!allowedTransfer){//only show for the first time
       statusText.textContent = 'Files incoming, click accept to proceed.';
       allowTransferButton.style.display = '';//show accept button
-    }
-    else{
+    }else{
       prepareReceiveFile();//prepare for the next one
     }
   }else if(msg === '[ack-file]'){//remote side accepted file, start sending
@@ -675,6 +737,7 @@ function onReceiveFromMsgChannel(event){
 
 // display byterate statistics.
 async function displayStats() {
+  console.log('displaying stats');
   if (pc && pc.iceConnectionState === 'connected') {
     const stats = await pc.getStats();
     let activeCandidatePair;
@@ -691,7 +754,7 @@ async function displayStats() {
       const bytesNow = activeCandidatePair.bytesReceived;
       const byterate = Math.round((bytesNow - bytesPrev)/
         (activeCandidatePair.timestamp - timestampPrev));
-      byterateDiv.innerHTML = `Current Speed: ${byterate / 1000} MB/s`;
+      byterateDiv.innerHTML = `Current Speed: ${(byterate / 1024).toFixed(3)} MB/s`;
       timestampPrev = activeCandidatePair.timestamp;
       bytesPrev = bytesNow;
       if (byterate > byterateMax) {
