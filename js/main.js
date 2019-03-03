@@ -12,7 +12,7 @@ let pc;
 let transferChannel;
 let msgChannel;
 let fileReader;
-let isInitiator;
+let isInitiator, isTransferAborted = false;
 let isPcOK = false, isBaseConnectionOK = false, isDataChannelOK = false;
 let willKeepSending = false;
 let remoteFileMetaList = new Array();
@@ -233,9 +233,14 @@ function sendSignalMsg(msg) {
 //sendFileButton.addEventListener('click', () => sendFile());//todo temporary, will be automatic later, this is for easier debugging
 abortButton.addEventListener('click', () => {
   if (fileReader && fileReader.readyState === 1) {
-    console.log('Abort read!');
     fileReader.abort();//don't disconnect yet, this is just aborting the file reading, maybe user will choose a different file
   }
+  isTransferAborted = true;
+  abortButton.style.display = 'none';
+  sendChannelMsg('[abort]');
+  console.log('Abort transfer!');
+  statusText.textContent = 'Transfer aborted';
+  resetTransferStuff();
 });
 
 allowTransferButton.onclick = allowTransferF;
@@ -245,8 +250,21 @@ function allowTransferF(){
   allowTransferButton.style.display = 'none';//no need for later
   prepareReceiveFile();
   allowedTransfer = true;
-  sendChannelMsg('ack-file');//notify remote side that local client is ready to receive file
+  sendChannelMsg('[ack-file]');//notify remote side that local client is ready to receive file
   abortButton.style.display = '';//show abort btn
+}
+
+function resetTransferStuff(){
+  receiveBuffer = [];//clear buffer
+  fileQueue = [];//clear local queue
+  remoteFileMetaList = [];//clear remote file queue
+  abortButton.style.display = 'none';
+  sendProgress.value = 0;
+  sendProgress.max = 0;
+  sendProgressContainer.style.display = 'none';
+  receiveProgress.value = 0;
+  receiveProgress.max = 0;
+  receiveProgressContainer.style.display = 'none';
 }
 
 async function handleFileInputChange() {
@@ -485,6 +503,10 @@ function sendFile() {
   fileReader.addEventListener('error', error => console.error('Error reading file:', error));
   fileReader.addEventListener('abort', event => console.log('File reading aborted:', event));
   fileReader.addEventListener('load', e => {
+    if(isTransferAborted){
+      console.log('file transfer in progress but aborted');
+      return;
+    }
     console.log('FileRead.onload ', e);
     transferChannel.send(e.target.result);
     offset += e.target.result.byteLength;
@@ -527,6 +549,7 @@ function prepareReceiveFile() {
     downloadAnchor.removeAttribute('href');
   }
   if(remoteFileMetaList.length > 0){
+    statusText.textContent = 'Receiving file...';
     receiveProgressContainer.style.display = '';//show receive progress bar
     receiveProgress.max = remoteFileMetaList[0].size;
     prepareStatisticStuff();
@@ -564,7 +587,7 @@ function onReceiveFromTransferChannel(event) {
       downloadAnchor.download = remoteFileMetaList[0].name;
       downloadAnchor.textContent =
         `Click to download '${remoteFileMetaList[0].name}' (${remoteFileMetaList[0].size} bytes)`;
-      downloadAnchor.style.display = 'block';
+      //downloadAnchor.style.display = 'block';//todo not dislaying for now
       downloadAnchor.click();//automatically 'click' download
 
       statusText.textContent = 'Transfer complete, waiting for more files.';
@@ -580,7 +603,6 @@ function onReceiveFromTransferChannel(event) {
         clearInterval(statsInterval);
         statsInterval = null;
       }
-      prepareReceiveFile();//prepare for the next one
     }else{
       console.log('channel signals file complete, but meta data doesn\'t match, something is wrong');
       //todo handle this
@@ -634,11 +656,20 @@ function onReceiveFromMsgChannel(event){
       size: Number(msg.substring(11, spliterPos)),
       name: msg.substr(spliterPos + 1)
     });
-    statusText.textContent = 'Files incoming, click accept to proceed.';
-    allowTransferButton.style.display = '';//show accept button
-  }else if(msg === 'ack-file'){//remote side accepted file, start sending
+    if(!allowedTransfer){//only show for the first time
+      statusText.textContent = 'Files incoming, click accept to proceed.';
+      allowTransferButton.style.display = '';//show accept button
+    }
+    else{
+      prepareReceiveFile();//prepare for the next one
+    }
+  }else if(msg === '[ack-file]'){//remote side accepted file, start sending
     allowTransfer = true;
     sendFile();
+  }else if(msg === '[abort]'){//remote end aborted file transfer
+    isTransferAborted = true;
+    statusText.textContent = 'Remote side aborted transfer';
+    resetTransferStuff();
   }
 }
 

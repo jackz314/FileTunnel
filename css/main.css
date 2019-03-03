@@ -16,7 +16,7 @@ form {
 }
 
 progress {
-  margin: 20px 0 20px 0;
+  /* margin: 20px 0 20px 0; */
   width: calc(100% - 8.5em);
 }
 
@@ -26,6 +26,7 @@ progress {
 
 #status-text {
   text-align: center;
+  padding-bottom: 10px;
 }
 
 #byterate {
