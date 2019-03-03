@@ -119,7 +119,7 @@ fileInput.addEventListener('change', handleFileInputChange, false);//todo the ab
 ////////////////////////////////////////////////
 //Socket stuff
 //todo temporary method to get roomName name, update later
-let tunnelCode = prompt('Enter a Tunnel code:');
+let tunnelCode = prompt('Enter a Tunnel code\nLeave blank to generate a random one:');
 console.log('Tunnel code:' + tunnelCode);
 
 //verify roomName name and join, if invalid name, generate a random name
@@ -166,11 +166,14 @@ console.log('Attempted to create or  join roomName', tunnelCode);
 //start of socket events
 socket.on('created', function(roomName) {
   console.log('Created roomName ' + roomName);
+  statusText.textContent = 'Waiting for remote side to dig in';
   isInitiator = true;
 });
 
 socket.on('full', function(roomName) {
   console.log('Room ' + roomName + ' is full');
+  tunnelCode = prompt('Enter another Tunnel code, this tunnel is full :(');//re-prompt if the room is taken
+  socket.emit('create or join', tunnelCode);
 });
 
 socket.on('join', function (roomName){
