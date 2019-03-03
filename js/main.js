@@ -77,22 +77,22 @@ fileDropZone.ondrop = function(e) {
   e.preventDefault();
   this.className = 'drop-zone';
 
-  if (ev.dataTransfer.items) {
+  if (e.dataTransfer.items) {
     // Use DataTransferItemList interface to access the file(s)
-    for (var i = 0; i < ev.dataTransfer.items.length; i++) {
+    for (var i = 0; i < e.dataTransfer.items.length; i++) {
       // If dropped items aren't files, reject them
-      if (ev.dataTransfer.items[i].kind === 'file') {
-        const file = ev.dataTransfer.items[i].getAsFile();
+      if (e.dataTransfer.items[i].kind === 'file') {
+        const file = e.dataTransfer.items[i].getAsFile();
         console.log('file[' + i + '].name = ' + file.name);
         addToFileQueue(file);
       }else{
-        console.log('selected none files, ignoring them', ev.dataTransfer.items[i].kind);
+        console.log('selected none files, ignoring them', e.dataTransfer.items[i].kind);
       }
     }
   } else {
     // Use DataTransfer interface to access the file(s) if the above is not supported
-    for (var i = 0; i < ev.dataTransfer.files.length; i++) {
-      console.log('file[' + i + '].name = ' + ev.dataTransfer.files[i].name);
+    for (var i = 0; i < e.dataTransfer.files.length; i++) {
+      console.log('file[' + i + '].name = ' + e.dataTransfer.files[i].name);
       addToFileQueue(file);
     }
   }
