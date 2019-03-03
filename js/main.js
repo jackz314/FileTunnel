@@ -13,7 +13,7 @@ let transferChannel;
 let msgChannel;
 let fileReader;
 let isInitiator;
-let isPcOK = false, isBaseConnectionOK = false, isTransferChannelOK = false;
+let isPcOK = false, isBaseConnectionOK = false, isDataChannelOK = false;
 let willKeepSending = false;
 let remoteFileMetaList = new Array();
 let allowTransfer = false, allowedTransfer = false;
@@ -34,7 +34,7 @@ const allowTransferButton = document.querySelector('button#allowButton');
 const roomLabel = document.querySelector('a#roomLabel');
 const fileDropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('fileInput');
-const statusMessage = document.getElementById('status-text');
+const statusText = document.getElementById('status-text');
 
 let receiveBuffer = [];
 let receivedSize = 0;
@@ -109,7 +109,7 @@ function addToFileQueue(file) {
   //send over the file meta info
   console.log('file meta info: ' + file.size + ' ' + file.name);
   sendChannelMsg('[file-meta]' + file.size + '|' + file.name);
-  if(!willKeepSending){
+  if(!willKeepSending && isDataChannelOK){//only manually start again when it's certain that sendFile() won't call itself again and when the connection is OK
     sendFile();
   }
 }
@@ -119,8 +119,8 @@ fileInput.addEventListener('change', handleFileInputChange, false);//todo the ab
 ////////////////////////////////////////////////
 //Socket stuff
 //todo temporary method to get roomName name, update later
-let roomName = prompt('Enter a fancy code name:');
-console.log('Room code:' + roomName);
+let roomName = prompt('Enter a Tunnel code:');
+console.log('Tunnel code:' + roomName);
 
 //verify roomName name and join, if invalid name, generate a random name
 
@@ -128,7 +128,7 @@ if(roomName === null || roomName.trim() === ''){
   roomName = makeRandomRoomId();
 }
 
-roomLabel.textContent = 'Room code: ' + roomName;
+roomLabel.textContent = 'Tunnel code: ' + roomName;
 
 let socket = io.connect();
 
@@ -154,19 +154,21 @@ socket.on('created', function(roomName) {
 
 socket.on('full', function(roomName) {
   console.log('Room ' + roomName + ' is full');
-  
 });
 
 socket.on('join', function (roomName){
   console.log('Another peer made a request to join roomName ' + roomName);
   console.log('This peer is the initiator of roomName ' + roomName + '!');
   isBaseConnectionOK = true;
+  statusText.textContent = 'Connecting...';
   createPcIfReady();
 });
 
 socket.on('joined', function(roomName) {
   console.log('joined: ' + roomName);
   isBaseConnectionOK = true;
+  isInitiator = false;
+  statusText.textContent = 'Connecting...';
 });
 
 socket.on('log', function(array) {
@@ -179,16 +181,18 @@ socket.on('msg', function(msg) {
   if (msg === 'mediaStreamReady') {//remote media stream ready, for the future
     createPcIfReady();
   } else if (msg.type === 'offer') {//got offer
-    //got offer
+    console.log('got remote offer sdp');
     if (!isInitiator /*shouldn't be initiator here (always pass), but just in case*/ && !isPcOK) {
       createPcIfReady();
     }
     pc.setRemoteDescription(new RTCSessionDescription(msg));
     createAnswer();
   } else if (msg.type === 'answer' && isPcOK) {//got answer
+    console.log('got remote answer sdp');
     pc.setRemoteDescription(new RTCSessionDescription(msg));
   } else if (msg.type === 'ice' && isPcOK) {//got ice
-    var candidate = new RTCIceCandidate({
+    console.log('got remote ice');
+    const candidate = new RTCIceCandidate({
       sdpMLineIndex: msg.label,
       candidate: msg.candidate
     });
@@ -214,14 +218,15 @@ abortButton.addEventListener('click', () => {
   }
 });
 
-allowTransferButton.onclick = allowTransfer;
-//allowTransferButton.addEventListener('click', () => allowTransfer());
+allowTransferButton.onclick = allowTransferF;
+//allowTransferButton.addEventListener('click', () => allowTransferF());
 
-function allowTransfer(){
+function allowTransferF(){
   allowTransferButton.style.display = 'none';//no need for later
   prepareReceiveFile();
   allowedTransfer = true;
   sendChannelMsg('ack-file');//notify remote side that local client is ready to receive file
+  abortButton.style.display = '';//show abort btn
 }
 
 async function handleFileInputChange() {
@@ -264,17 +269,8 @@ async function createPc() {
   console.log('Created local peer connection object pc');
   //pc.addStream(localStream);//not used for now
   isPcOK = true;
-  console.log('isInitiator:', isInitiator);
-  if (isInitiator) {
-    createOffer();
-  }
 
-  //set peer connection listeners
-  pc.onicecandidate = onLocalIce;
-  pc.onaddstream = handleRemoteStreamAdded;
-  pc.onremovestream = handleRemoteStreamRemoved;
-
-  //create data channels
+//create data channels
   const transferChannelOptions = {
     priority: 'high',
     negotiated: false,
@@ -292,7 +288,6 @@ async function createPc() {
   transferChannel.onerror = onDataChannelError;
 
   const msgChannelOptions = {
-    ordered: true,
     priority: 'medium',
     negotiated: false,
     id: 102,//manual symmetric set up
@@ -306,6 +301,16 @@ async function createPc() {
   msgChannel.onmessage = onReceiveFromMsgChannel;
   msgChannel.onerror = onDataChannelError;
   console.log('Created msg data channel');
+
+  console.log('isInitiator:', isInitiator);
+  if (isInitiator) {
+    createOffer();
+  }
+
+  //set peer connection listeners
+  pc.addEventListener('icecandidate', onLocalIce);
+  pc.onaddstream = handleRemoteStreamAdded;
+  pc.onremovestream = handleRemoteStreamRemoved;
 }
 
 function createOffer(){
@@ -358,34 +363,34 @@ function handleRemoteStreamRemoved(event) {
   console.log('Remote stream removed. Event: ', event);
 }
 
-function requestTurn(turnURL) {
-  var turnExists = false;
-  for (var i in pcConfig.iceServers) {
-    if (pcConfig.iceServers[i].urls.substr(0, 5) === 'turn:') {
-      turnExists = true;
-      turnReady = true;
-      break;
-    }
-  }
-  if (!turnExists) {
-    console.log('Getting TURN server from ', turnURL);
-    // No TURN server. Get one from computeengineondemand.appspot.com:
-    var xhr = new XMLHttpRequest();
-    xhr.onreadystatechange = function() {
-      if (xhr.readyState === 4 && xhr.status === 200) {
-        var turnServer = JSON.parse(xhr.responseText);
-        console.log('Got TURN server: ', turnServer);
-        pcConfig.iceServers.push({
-          'urls': 'turn:' + turnServer.username + '@' + turnServer.turn,
-          'credential': turnServer.password
-        });
-        turnReady = true;
-      }
-    };
-    xhr.open('GET', turnURL, true);
-    xhr.send();
-  }
-}
+// function requestTurn(turnURL) {
+//   var turnExists = false;
+//   for (var i in pcConfig.iceServers) {
+//     if (pcConfig.iceServers[i].urls.substr(0, 5) === 'turn:') {
+//       turnExists = true;
+//       turnReady = true;
+//       break;
+//     }
+//   }
+//   if (!turnExists) {
+//     console.log('Getting TURN server from ', turnURL);
+//     // No TURN server. Get one from computeengineondemand.appspot.com:
+//     var xhr = new XMLHttpRequest();
+//     xhr.onreadystatechange = function() {
+//       if (xhr.readyState === 4 && xhr.status === 200) {
+//         var turnServer = JSON.parse(xhr.responseText);
+//         console.log('Got TURN server: ', turnServer);
+//         pcConfig.iceServers.push({
+//           'urls': 'turn:' + turnServer.username + '@' + turnServer.turn,
+//           'credential': turnServer.password
+//         });
+//         turnReady = true;
+//       }
+//     };
+//     xhr.open('GET', turnURL, true);
+//     xhr.send();
+//   }
+// }
 
 function disconnect() {
   console.log('Hanging up.');
@@ -403,27 +408,30 @@ function stopPc() {
 function handleRemoteDisconnect() {
   console.log('Session terminated by remote end.');
   stopPc();
-  isInitiator = false;
 }
 
 function sendChannelMsg(msg){
   console.log('Sending data channel msg: ' + msg);
-  msgChannel.send(msg);
+  if(isDataChannelOK){
+    msgChannel.send(msg);
+  }else{
+    console.log('Data channel is not open, can\'t send msg now');
+  }
 }
 
 function sendFile() {
   if(fileQueue.length == 0){
     //all files transferred
-    willKeepSending = false;
+    postSendFile();
     return;
   }
-  let file = fileQueue[0];
+  const file = fileQueue[0];
   console.log(`File is ${[file.name, file.size, file.type, file.lastModified].join(' ')}`);
 
   // Handle 0 size files.
   if (file.size === 0) {
     byterateDiv.innerHTML = '';
-    statusMessage.textContent = 'File is empty, please select a non-empty file';
+    statusText.textContent = 'File is empty, please select a non-empty file';
     console.log('selected file is empty');
     fileQueue.shift();//skip to the next one
     sendFile();
@@ -438,14 +446,14 @@ function sendFile() {
     sendFileButton.disabled = true;
   }else{
     console.log('remote side didn\'t allow transfer yet, waiting for remote permission...');
-    willKeepSending = false;
+    statusText.textContent = 'Files ready, waiting for remote side to accept files...';
+    postSendFile();
     return;
   }
   
-  statusMessage.textContent = 'Sending file';
+  statusText.textContent = 'Sending file';
 
   willKeepSending = true;
-  const file = fileQueue[0];
   sendProgress.max = file.size;
 
   const chunkSize = 16384 * 2;//todo temp
@@ -473,6 +481,12 @@ function sendFile() {
     fileReader.readAsArrayBuffer(slice);
   };
   readSlice(0);//start first
+}
+
+function postSendFile(){
+  willKeepSending = false;
+  statusText.textContent = 'Transfer complete, waiting for more files.';
+  abortButton.style.display = 'none';//hide abort btn
 }
 
 function prepareReceiveFile() {
@@ -503,12 +517,11 @@ function onReceiveFromTransferChannel(event) {
   }
   if(event.data === 'transfer_done'){//transfer of one file is complete
     console.log('File transfer complete');
+    abortButton.style.display = 'none';//hide abort btn
     if (receivedSize === remoteFileMetaList[0].size) {//verify again that we got all the content of the file
       console.log('File' + remoteFileMetaList.name + ' transfer complete');
       const received = new Blob(receiveBuffer);//todo move to stream or other things for larger files
       receiveBuffer = [];//clear buffer
-  
-      remoteFileMetaList.shift();//remove the completed one, continue to the next one
       
       //download
       downloadAnchor.href = URL.createObjectURL(received);
@@ -518,11 +531,15 @@ function onReceiveFromTransferChannel(event) {
       downloadAnchor.style.display = 'block';
       downloadAnchor.click();//automatically 'click' download
 
+      statusText.textContent = 'Transfer complete, waiting for more files.';
+
+      remoteFileMetaList.shift();//remove the completed one, continue to the next one
+
       //statistics for this file
       const byterate = Math.round(receivedSize /
         ((new Date()).getTime() - timestampStart));
       byterateDiv.innerHTML
-        += `<strong>Average Speed:</strong> ${byterate / 1000} MB/s (max: ${byterateMax / 1000} MB/s)\n`;
+        += `Average Speed: ${byterate / 1000} MB/s (max: ${byterateMax / 1000} MB/s)\n`;
       if (statsInterval) {
         clearInterval(statsInterval);
         statsInterval = null;
@@ -532,7 +549,6 @@ function onReceiveFromTransferChannel(event) {
       console.log('channel signals file complete, but meta data doesn\'t match, something is wrong');
       //todo handle this
     }
-
   }else{
     console.log(`Received data from transfer channel ${event.data.byteLength}`);
     receiveBuffer.push(event.data);
@@ -546,10 +562,13 @@ function onTransferChannelStateChange() {
   console.log(`Send channel state is: ${readyState}`);
   //send
   if (readyState === 'open') {
-    isTransferChannelOK = true;
-    sendFile();
+    if(msgChannel.readyState === 'open'){
+      statusText.textContent = 'Connected, waiting for files';
+      isDataChannelOK = true;
+    }
+    sendFile();//todo may need update
   }else{
-    isTransferChannelOK = false;
+    isDataChannelOK = false;
   }
 }
 
@@ -557,6 +576,12 @@ function onMsgChannelStateChange() {
   const readyState = msgChannel.readyState;
   console.log(`Msg channel state is: ${readyState}`);
   //other stuff...
+  if(transferChannel.readyState === 'open'){
+    statusText.textContent = 'Connected, waiting for files';
+    isDataChannelOK = true;
+  }else{
+    isDataChannelOK = false;
+  }
 }
 
 function onDataChannelError(error){
@@ -573,6 +598,7 @@ function onReceiveFromMsgChannel(event){
       size: Number(msg.substring(11, spliterPos)),
       name: msg.substr(spliterPos + 1)
     });
+    statusText.textContent = 'Files incoming, click accept to proceed.';
     allowTransferButton.style.display = '';//show accept button
   }else if(msg === 'ack-file'){//remote side accepted file, start sending
     allowTransfer = true;
@@ -615,11 +641,6 @@ function closeDataChannels() {
   pc.close();
   pc = null;
   console.log('Closed peer connection');
-
-  // re-enable the file select
-  fileInput.disabled = false;
-  abortButton.disabled = true;
-  sendFileButton.disabled = false;
 }
 
 /////////////////////////////////////////
