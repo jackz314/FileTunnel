@@ -6,10 +6,13 @@ var http = require('http');
 var socketIO = require('socket.io');
 
 var fileServer = new(nodeStatic.Server)();
+
+var PORT = process.env.PORT || 8080;
+
 var app = http.createServer(function(req, res) {
   //nocache(res);
   fileServer.serve(req, res);
-}).listen(8080);
+}).listen(PORT);
 
 
 // function nocache (res) {

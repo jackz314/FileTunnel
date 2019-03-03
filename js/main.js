@@ -474,7 +474,7 @@ function sendFile() {
   willKeepSending = true;
 
   sendProgress.max = file.size;
-  sendProgress.style.display = '';//hide send progress bar
+  sendProgressContainer.style.display = '';//hide send progress bar
 
   const chunkSize = 16384 * 2;//todo temp
   fileReader = new FileReader();
@@ -486,6 +486,7 @@ function sendFile() {
     transferChannel.send(e.target.result);
     offset += e.target.result.byteLength;
     sendProgress.value = offset;
+    console.log('send progress: ', offset, sendProgress.value);
     if (offset < file.size) {
       readSlice(offset);
     }else{
@@ -509,7 +510,7 @@ function postSendFile(){
   willKeepSending = false;
   statusText.textContent = 'Transfer complete, waiting for more files.';
   abortButton.style.display = 'none';//hide abort btn
-  sendProgress.style.display = 'none';//hide send progress bar
+  sendProgressContainer.style.display = 'none';//hide send progress bar
 }
 
 function prepareReceiveFile() {
@@ -523,13 +524,14 @@ function prepareReceiveFile() {
     downloadAnchor.removeAttribute('href');
   }
   if(remoteFileMetaList.length > 0){
-    receiveProgress.style.display = '';//show receive progress bar
+    receiveProgressContainer.style.display = '';//show receive progress bar
     receiveProgress.max = remoteFileMetaList[0].size;
     prepareStatisticStuff();
   }
 }
 
 function prepareStatisticStuff(){
+  console.log('preparing statistic stuff');
   timestampStart = (new Date()).getTime();
   timestampPrev = timestampStart;
   statsInterval = setInterval(displayStats, 500);
@@ -547,7 +549,7 @@ function onReceiveFromTransferChannel(event) {
   }
   if(event.data === 'transfer_done'){//transfer of one file is complete
     console.log('File transfer complete');
-    receiveProgress.style.display = 'none';//show receive progress bar
+    receiveProgressContainer.style.display = 'none';//hide receive progress bar
     abortButton.style.display = 'none';//hide abort btn
     if (receivedSize === remoteFileMetaList[0].size) {//verify again that we got all the content of the file
       console.log('File' + remoteFileMetaList.name + ' transfer complete');

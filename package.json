@@ -4,6 +4,30 @@
   "description": "FileTunnel",
   "dependencies": {
     "node-static": "^0.7.10",
-    "socket.io": "^2.0.4"
+    "socket.io": "^2.2.0"
+  },
+  "engines": {
+    "node": ">=8"
+  },
+  "scripts": {
+    "deploy": "gcloud app deploy",
+    "start": "node index.js",
+    "lint": "samples lint",
+    "pretest": "npm run lint",
+    "test": "node app.js & ava -T 30s test/*.js; killall node",
+    "e2e-test": "samples test deploy"
+  },
+  "devDependencies": {
+    "@google-cloud/nodejs-repo-tools": "3.2.0",
+    "puppeteer": "^1.11.0"
+  },
+  "cloud-repo-tools": {
+    "test": {
+      "app": {
+        "msg": "messages"
+      }
+    },
+    "requiresKeyFile": true,
+    "requiresProjectId": true
   }
 }
