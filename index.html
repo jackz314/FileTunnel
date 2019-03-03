@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<!--
+ *  Copyright (c) 2015 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree.
+-->
+<html>
+<head>
+
+  <!-- bootstrap ui -->
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous">
+
+  <meta charset="utf-8">
+  <meta name="description" content="ShareThings">
+  
+  <!-- mobile friendly -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <!-- original -->
+  <!-- <meta name="viewport" content="width=device-width, user-scalable=yes, initial-scale=1, maximum-scale=1"> -->
+  <meta itemprop="description" content="Client-side WebRTC code samples">
+  <meta itemprop="name" content="ShareThings">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta id="theme-color" name="theme-color" content="#ffffff">
+
+  <base target="_blank">
+
+  <title>ShareThings</title>
+
+  <link rel="icon" href="resources/favicon.ico">
+  <link href="//fonts.googleapis.com/css?family=Roboto:300,400,500,700" rel="stylesheet" type="text/css">
+  <link rel="stylesheet" href="../../../css/main.css">
+  <link rel="stylesheet" href="css/main.css" />
+
+</head>
+
+<body>
+
+    <nav class="navbar navbar-expand-sm navbar-dark bg-primary flex-row">
+        <a href class="navbar-brand d-flex w-50 mr-0">
+          <img src="resources/share_white.svg" width="30" height="30" class="d-inline-block align-top" alt="">
+          ShareThings
+        </a>
+        <div class="navbar-collapse collapse w-100" id="navbarCenter">
+            <ul class="navbar-nav mx-sm-auto">
+                <li class="nav-item">
+                    <a class="nav-link" id="roomLabel">Waiting for a code</a>
+                </li>
+            </ul>
+        </div>
+        <div class="d-flex w-50">
+          <!-- placeholder to keep links centered-->
+          <ul class="navbar-nav ml-auto">
+              <li class="nav-item">
+                <a class="nav-link">Log in</a>
+              </li>
+            </ul>
+        </div>
+    </nav>
+
+  <div class="container">
+    <section>
+      <div >
+        <div class="drop-zone" id="drop-zone">
+            Drag and drop files here
+        </div>
+        <!-- invisible file input for manual file selection-->
+        <input id="fileInput" type="file" multiple="multiple" style="display:none;" />
+        <button type="button" class="btn btn-primary" style="display:none;" id="sendFile">Send</button>
+        <button type="button" class="btn btn-primary" style="display:none;" id="abortButton">Abort</button>
+        <button type="button" class="btn btn-primary" style="display:none;" id="allowButton">Accept File</button>
+      </div>
+
+      <div id="status-text">
+        Waiting for remote side to join
+      </div>
+
+      <div class="progress" id="sendProgressContainer" style="display:none;">
+        <div id="sendCountProgress">0/0</div>
+        <div class="label">Send progress: </div>
+        <progress id="sendProgress" max="0" value="0"></progress>
+      </div>
+
+      <div class="progress" id="receiveProgressContainer" style="display:none;">
+        <div id="receiveCountProgress">0/0</div>
+        <div class="label">Receive progress: </div>
+        <progress id="receiveProgress" max="0" value="0"></progress>
+      </div>
+
+      <div id="byterate"></div>
+      <a id="download"></a>
+
+    </section>
+
+  </div>
+  
+  <!-- Socket IO script will be set up automatically at runtime, no worries now -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+  <script src="js/main.js"></script>
+
+  <!-- bootstrap ui -->
+  <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.7/umd/popper.min.js" integrity="sha384-UO2eT0CpHqdSJQ6hJty5KVphtPhzWj9WO1clHTMGa3JDZwrnQq4sF86dIHNDz0W1" crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js" integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM" crossorigin="anonymous"></script>
+
+</body>
+
+<footer class="footer py-3">
+    <div class="container">
+      <a href="https://github.com/jackz314" title="Github" id="viewSource">Author: Jack Zhang, Visit me on Github</a>
+    </div>
+  </footer>
+
+</html>

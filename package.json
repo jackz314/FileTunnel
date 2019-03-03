@@ -1,0 +1,10 @@
+{
+  "name": "share-things",
+  "version": "0.0.1",
+  "description": "Share things",
+  "dependencies": {
+    "nocache": "^2.0.0",
+    "node-static": "^0.7.10",
+    "socket.io": "^2.0.4"
+  }
+}
