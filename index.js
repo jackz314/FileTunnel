@@ -33,9 +33,10 @@ io.sockets.on('connection', function(socket) {
 
   socket.on('msg', function(message) {
     log('Client said: ', message);
-    // for a real app, would be room-only (not broadcast)
-    socket.broadcast.emit('msg', message);
-  });
+    const roomCode = Object.keys(io.sockets.adapter.sids[socket.id])[0];
+    socket.to(roomCode).emit('msg', message);//send to id belonged room (tunnel)
+    ;
+    });
 
   socket.on('create or join', function(room) {
     log('Received request to create or join room ' + room);

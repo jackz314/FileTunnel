@@ -13,7 +13,10 @@ let transferChannel;
 let msgChannel;
 let fileReader;
 let isInitiator, isTransferAborted = false;
-let isPcOK = false, isBaseConnectionOK = false, isDataChannelOK = false;
+let isPcOK = false, isBaseConnectionOK = false,
+  isDataChannelOK = false, 
+  isMsgChannelOK = false, 
+  isTransferChannelOK = false;
 let willKeepSending = false;
 let remoteFileMetaList = new Array();
 let allowTransfer = false, allowedTransfer = false;
@@ -60,9 +63,16 @@ const byteToMB = 1048576;
 
 //webrtc config
 let pcConfig = {
-  'iceServers': [{
-    'urls': 'stun:stun.l.google.com:19302'
-  }]
+  'iceServers': [
+    {
+      urls: 'stun:stun.l.google.com:19302'
+    },
+    {
+      urls: 'turns:numb.viagenie.ca',
+      username: "jackz314college@gmail.com",
+      credential: "PYxTXhf6zD4JBet"
+    }
+  ]
 };
 
 // Set up audio and video regardless of what devices are present.
@@ -120,8 +130,13 @@ function addToFileQueue(file) {
   fileQueue.push(file);
   //send over the file meta info
   console.log('file meta info: ' + file.size + ' ' + file.name);
-  sendChannelMsg('[file-meta]' + file.size + '|' + file.name);
-  if(willKeepSending){
+  if(isDataChannelOK){
+    sendChannelMsg('[file-meta]' + file.size + '|' + file.name);
+  }else{
+    console.log('added file but data channel is not established yet');
+    statusText.textContent = 'Files ready, waiting for remote side to dig in...';
+  }
+  if(willKeepSending){//update the queue length display if is/will be uploading
     sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
   }
   if(!willKeepSending && isDataChannelOK){//only manually start again when it's certain that sendFile() won't call itself again and when the connection is OK
@@ -493,7 +508,7 @@ function sendFile() {
     return;
   }
   const file = fileQueue[0];
-  console.log(`File is ${[file.name, file.size, file.type, file.lastModified].join(' ')}`);
+  console.log(`Sending file: ${[file.name, file.size, file.type, file.lastModified].join(' ')}`);
 
   // Handle 0 size files.
   if (file.size === 0) {
@@ -678,18 +693,41 @@ function onReceiveFromTransferChannel(event) {
   }
 }
 
+function onAllDataChannelReady(){
+  if(fileQueue.length == 0){
+    statusText.textContent = 'Connected, waiting for files';
+  }else{
+    statusText.textContent = 'Files ready, waiting for remote side to accept files...';
+  }
+  //isDataChannelOk should always be false but just in case (make sure it wasn't done)
+  //send all the file info to remote if there's already files in queue
+  if(!isDataChannelOK && fileQueue.length > 0){
+    isDataChannelOK = true;
+    console.log('data channel opened after files are loaded in, sending file infos now to remote');
+    fileQueue.forEach((file, index) =>{
+      console.log(index + ' - file meta info: ' + file.size + ' ' + file.name);
+      sendChannelMsg('[file-meta]' + file.size + '|' + file.name);
+    });
+    //sendFile();
+  }
+  isDataChannelOK = true;
+}
+
 function onTransferChannelStateChange() {
   const readyState = transferChannel.readyState;
-  console.log(`Send channel state is: ${readyState}`);
+  console.log(`Transfer channel state is: ${readyState}`);
   //send
   if (readyState === 'open') {
-    if(msgChannel.readyState === 'open'){
-      statusText.textContent = 'Connected, waiting for files';
-      isDataChannelOK = true;
+    isTransferChannelOK = true;
+    if(isMsgChannelOK){
+      console.log('teransfer channel ready after msg channel is ready');
+      onAllDataChannelReady();
+    }else{
+      isDataChannelOK = false;
     }
-    sendFile();//todo may need update
   }else{
     isDataChannelOK = false;
+    isTransferChannelOK = false;
   }
 }
 
@@ -697,11 +735,17 @@ function onMsgChannelStateChange() {
   const readyState = msgChannel.readyState;
   console.log(`Msg channel state is: ${readyState}`);
   //other stuff...
-  if(transferChannel.readyState === 'open'){
-    statusText.textContent = 'Connected, waiting for files';
-    isDataChannelOK = true;
+  if(readyState === 'open'){
+    isMsgChannelOK = true;
+    if(isTransferChannelOK){
+      console.log('msg channel ready after transfer channel is ready');
+      onAllDataChannelReady();
+    }else{
+      isDataChannelOK = false;
+    }
   }else{
     isDataChannelOK = false;
+    isMsgChannelOK = false;
   }
 }
 
