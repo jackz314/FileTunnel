@@ -14,6 +14,7 @@ var app = http.createServer(function(req, res) {
   fileServer.serve(req, res);
 }).listen(PORT);
 
+console.log("Server listening on port " + PORT);
 
 // function nocache (res) {
 //   res.setHeader('Surrogate-Control', 'no-store')

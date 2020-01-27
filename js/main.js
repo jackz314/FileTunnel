@@ -346,8 +346,8 @@ async function createPc() {
 //create data channels
   const transferChannelOptions = {
     priority: 'high',
-    negotiated: false,
-    id: 101,//manual symmetric set up
+    negotiated: true,
+    id: 1,//manual symmetric set up
     maxPacketLifeTime: 10000//10 secs
   }
   transferChannel = pc.createDataChannel('transferChannel', transferChannelOptions);
@@ -362,10 +362,10 @@ async function createPc() {
 
   const msgChannelOptions = {
     priority: 'medium',
-    negotiated: false,
-    id: 102,//manual symmetric set up
+    negotiated: true,
+    id: 2,//manual symmetric set up
   }
-  //create msg channel
+  //create msg channel, out of band approach
   msgChannel = pc.createDataChannel('msgChannel', msgChannelOptions);
 
   //listeners
