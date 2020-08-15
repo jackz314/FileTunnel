@@ -13,6 +13,7 @@ let isPcReady = false, isSignalServerConnected = false,
 let willKeepSending = false;
 let remoteFileMetaList = [];
 let allowTransfer = false, allowedTransfer = false;
+let isSending = false;
 let fileQueue = [];
 
 //elements that will be used
@@ -34,8 +35,10 @@ const statusText = document.getElementById('status-text');
 
 let receiveBuffer = [];
 let receivedSize = 0;
+let totalReceivedSize = 0;
 
 let sendFileOffset = 0;
+let totalSentSize = 0;
 
 //calculate speed of transfer
 let bytesPrev = 0;
@@ -133,7 +136,7 @@ function addToFileQueue(file) {
     statusText.textContent = 'Files ready, waiting for remote side to dig in...';
   }
   if(willKeepSending){//update the queue length display if is/will be uploading
-    sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
+    sendProgressLabel.innerHTML = 'Send (' + fileQueue.length + ')';
   }
   if(!willKeepSending && isDataChannelOK){//only manually start again when it's certain that sendFile() won't call itself again and when the connection is OK
     sendFile();
@@ -282,9 +285,9 @@ function allowTransferF(){
 }
 
 function resetTransferStuff(){
-  receiveBuffer = [];//clear buffer
-  fileQueue = [];//clear local queue
-  remoteFileMetaList = [];//clear remote file queue
+  receiveBuffer.length = 0;//clear buffer
+  fileQueue.length = 0;//clear local queue
+  remoteFileMetaList.length = 0;//clear remote file queue
   abortButton.style.display = 'none';
   sendProgress.value = 0;
   sendProgress.max = 0;
@@ -298,6 +301,7 @@ function resetTransferStuff(){
     clearInterval(statsInterval);
     statsInterval = null;
   }
+  byterateDiv.innerHTML = '';
   // statsIntervalAcc = null;
   byterateMax = 0;
   // sendSpeed = 0;
@@ -515,6 +519,7 @@ function sendFile() {
     sendFileComplete();
     return;
   }
+  isSending = true;
   const file = fileQueue[0];
   console.log(`Sending file: ${[file.name, file.size, file.type, file.lastModified].join(' ')}`);
 
@@ -545,7 +550,7 @@ function sendFile() {
 
   sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
 
-  // prepareStatisticStuff();//not working well
+  prepareStatisticStuff();//not working well
   
   willKeepSending = true;
 
@@ -565,13 +570,14 @@ function sendFile() {
     transferChannel.send(e.target.result);
     sendFileOffset += e.target.result.byteLength;
     sendProgress.value = sendFileOffset;
+    totalSentSize += e.target.result.byteLength;
     // console.log('send progress: ', sendFileOffset);
     // console.log('data channel buffered amount', transferChannel.bufferedAmount)
     if (sendFileOffset < file.size) {//file read is not finished, continue
       if(transferChannel.bufferedAmount >= chunkSize * 250){//too much is queued in the data channel, wait and start reading later
-        console.log('too much buffered in the data channel, waiting to read later');
+        // console.log('too much buffered in the data channel, waiting to read later');
         transferChannel.onbufferedamountlow = () => {//resume reading file when the queue is cleared below the threshold
-          console.log('data channel buffer cleared under threshold, continue reading');
+          // console.log('data channel buffer cleared under threshold, continue reading');
           readSlice(sendFileOffset);//continue to read
           transferChannel.onbufferedamountlow = null;
         }
@@ -600,6 +606,12 @@ function sendFileComplete(){
   statusText.textContent = 'Transfer complete, waiting for more files.';
   abortButton.style.display = 'none';//hide abort btn
   sendProgressContainer.style.display = 'none';//hide send progress bar
+  if (statsInterval) {
+    clearInterval(statsInterval);
+    statsInterval = null;
+  }
+  displayFinalStatistics();
+  isSending = false;
 }
 
 function prepareReceiveFile() {
@@ -614,7 +626,7 @@ function prepareReceiveFile() {
     downloadAnchor.removeAttribute('href');
   }
   if(remoteFileMetaList.length > 0){
-    receiveProgressLabel.textContent = 'Receive (' + remoteFileMetaList.length + ')';
+    receiveProgressLabel.innerHTML = 'Receive (' + remoteFileMetaList.length + ')';
     statusText.textContent = 'Receiving file...';
     receiveProgressContainer.style.display = '';//show receive progress bar
     receiveProgress.max = remoteFileMetaList[0].size;
@@ -657,6 +669,15 @@ function prepareStatisticStuff(){
 //   Download Speed: ${receiveSpeed/byteToMB} MB/s. Average Download Speed: ${(receiveTime/receivedSize) / byteToMB} MB/s (max: ${receiveMaxSpeed / byteToMB} MB/s)`;
 // }
 
+function displayFinalStatistics() {
+  //statistics for this file
+  let totalSize = isSending ? totalSentSize : totalReceivedSize;
+  const byterate = Math.round(totalSize /
+    ((new Date()).getTime() - timestampStart));
+  byterateDiv.innerHTML
+    = `Average Speed: ${(byterate / 1024).toFixed(3)} MB/s (Max: ${(byterateMax / 1024).toFixed(3)} MB/s)\n`;
+}
+
 function onReceiveFromTransferChannel(event) {
   if(!allowedTransfer){
     console.log('got data even though local client didn\'t accept it. Ignoring it.');
@@ -674,6 +695,7 @@ function onReceiveFromTransferChannel(event) {
       console.log('File' + remoteFileMetaList.name + ' transfer complete');
       const received = new Blob(receiveBuffer);//todo move to stream or other things for larger files
       receiveBuffer.length = 0;//clear buffer
+      receivedSize = 0;
       
       //download
       downloadAnchor.href = URL.createObjectURL(received);
@@ -687,15 +709,12 @@ function onReceiveFromTransferChannel(event) {
 
       remoteFileMetaList.shift();//remove the completed one, continue to the next one
 
-      //statistics for this file
-      const byterate = Math.round(receivedSize /
-        ((new Date()).getTime() - timestampStart));
-      byterateDiv.innerHTML
-        = `Average Speed: ${(byterate / 1024).toFixed(3)} MB/s (max: ${(byterateMax / 1024).toFixed(3)} MB/s)\n`;
       if (statsInterval) {
         clearInterval(statsInterval);
         statsInterval = null;
       }
+
+      displayFinalStatistics();
     }else{
       console.log('channel signals file complete, but meta data doesn\'t match, something is wrong');
       //todo handle this
@@ -705,6 +724,7 @@ function onReceiveFromTransferChannel(event) {
     receiveBuffer.push(event.data);
     receivedSize += event.data.byteLength;
     receiveProgress.value = receivedSize;
+    totalReceivedSize += event.data.byteLength;
   }
 }
 
@@ -810,7 +830,7 @@ async function displayStats() {
         return;
       }
       // calculate current byterate
-      const bytesNow = activeCandidatePair.bytesReceived;
+      const bytesNow = isSending ? activeCandidatePair.bytesSent : activeCandidatePair.bytesReceived;
       const byterate = Math.round((bytesNow - bytesPrev)/
         (activeCandidatePair.timestamp - timestampPrev));
       byterateDiv.innerHTML = `Current Speed: ${(byterate / 1024).toFixed(3)} MB/s`;

@@ -1,12 +1,11 @@
-
-
 div.progress, div#bitrate {
   margin: 0 0 1em 0;
+  line-height: unset;
 }
 
 div.progress div.label {
-  display: inline-block;
-  font-weight: 400;
+  /*display: inline-block;*/
+  /*font-weight: 400;*/
   width: 8.2em;
 }
 
