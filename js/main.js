@@ -42,11 +42,11 @@ let totalSentSize = 0;
 
 //calculate speed of transfer
 let bytesPrev = 0;
+let byterateMax = 0;
 let timestampPrev = 0;
 let timestampStart;
 let statsInterval = null;
 let statsIntervalAcc = null;
-let byterateMax = 0;
 let sendSpeed = 0;
 let receiveSpeed = 0;
 let sendMaxSpeed = 0;
@@ -284,6 +284,18 @@ function allowTransferF(){
   abortButton.style.display = '';//show abort btn
 }
 
+function clearStatistics() {
+  totalSentSize = 0;//reset these total values after one round
+  totalReceivedSize = 0;
+  if (statsInterval) {
+    clearInterval(statsInterval);
+    statsInterval = null;
+  }
+  byterateMax = 0;
+  // bytesPrev = 0;
+  // timestampPrev = 0;
+}
+
 function resetTransferStuff(){
   receiveBuffer.length = 0;//clear buffer
   fileQueue.length = 0;//clear local queue
@@ -297,10 +309,7 @@ function resetTransferStuff(){
   receiveProgressContainer.style.display = 'none';
 
   //statistic stuff
-  if (statsInterval) {
-    clearInterval(statsInterval);
-    statsInterval = null;
-  }
+  clearStatistics();
   byterateDiv.innerHTML = '';
   // statsIntervalAcc = null;
   byterateMax = 0;
@@ -516,7 +525,15 @@ function sendChannelMsg(msg){
 function sendFile() {
   if(fileQueue.length === 0){
     //all files transferred
-    sendFileComplete();
+    //Everything is now in the buffer, now waiting for the actual transfer to finish.
+    console.log("all data buffered, waiting for transfer to finish");
+    statusText.textContent = 'Waiting for remote side to finish receiving data, don\'t close the window yet';
+    transferChannel.bufferedAmountLowThreshold = 0;
+    transferChannel.onbufferedamountlow = () => {
+      sendFileComplete();
+      transferChannel.bufferedAmountLowThreshold = chunkSize * 125;
+      transferChannel.onbufferedamountlow = null;
+    };
     return;
   }
   isSending = true;
@@ -550,7 +567,7 @@ function sendFile() {
 
   sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
 
-  prepareStatisticStuff();//not working well
+  prepareStatisticStuff();
   
   willKeepSending = true;
 
@@ -569,7 +586,7 @@ function sendFile() {
     // console.log('FileRead.onload ', e);
     transferChannel.send(e.target.result);
     sendFileOffset += e.target.result.byteLength;
-    sendProgress.value = sendFileOffset;
+    sendProgress.value = sendFileOffset - transferChannel.bufferedAmount;
     totalSentSize += e.target.result.byteLength;
     // console.log('send progress: ', sendFileOffset);
     // console.log('data channel buffered amount', transferChannel.bufferedAmount)
@@ -676,6 +693,7 @@ function displayFinalStatistics() {
     ((new Date()).getTime() - timestampStart));
   byterateDiv.innerHTML
     = `Average Speed: ${(byterate / 1024).toFixed(3)} MB/s (Max: ${(byterateMax / 1024).toFixed(3)} MB/s)\n`;
+  clearStatistics();
 }
 
 function onReceiveFromTransferChannel(event) {
@@ -811,36 +829,47 @@ function onReceiveFromMsgChannel(event){
     isTransferAborted = true;
     statusText.textContent = 'Remote side aborted transfer';
     resetTransferStuff();
-  }
+  }/*else if(msg === '[rcv-file]'){//remote received the file, can close window/connection now
+    sendFileComplete();
+  }*/
+}
+
+//get the active transport ICE Candidate Pair that transports the data
+async function getTransportCandidatePair(){
+  if (pc && pc.iceConnectionState === 'connected') {
+    const stats = await pc.getStats();
+    let pair;
+    stats.forEach(report => {
+      if (report.type === 'transport') {
+        pair = stats.get(report.selectedCandidatePairId);
+      }
+    });
+    return pair;
+  }else return null;
 }
 
 // display byterate statistics.
 async function displayStats() {
   // console.log('displaying stats');
-  if (pc && pc.iceConnectionState === 'connected') {
-    const stats = await pc.getStats();
-    let activeCandidatePair;
-    stats.forEach(report => {
-      if (report.type === 'transport') {
-        activeCandidatePair = stats.get(report.selectedCandidatePairId);
-      }
-    });
-    if (activeCandidatePair) {
-      if (timestampPrev === activeCandidatePair.timestamp) {
-        return;
-      }
-      // calculate current byterate
-      const bytesNow = isSending ? activeCandidatePair.bytesSent : activeCandidatePair.bytesReceived;
-      const byterate = Math.round((bytesNow - bytesPrev)/
-        (activeCandidatePair.timestamp - timestampPrev));
-      byterateDiv.innerHTML = `Current Speed: ${(byterate / 1024).toFixed(3)} MB/s`;
-      timestampPrev = activeCandidatePair.timestamp;
-      bytesPrev = bytesNow;
-      if (byterate > byterateMax) {
-        byterateMax = byterate;
-      }
+  let activeCandidatePair = await getTransportCandidatePair();
+  if (activeCandidatePair) {
+    if (timestampPrev === activeCandidatePair.timestamp) {
+      return;
     }
+    // calculate current byterate
+    const bytesNow = isSending ? sendFileOffset - transferChannel.bufferedAmount : activeCandidatePair.bytesReceived;
+    const byterate = Math.round((bytesNow - bytesPrev)/
+      (activeCandidatePair.timestamp - timestampPrev));
+    byterateDiv.innerHTML = `Current Speed: ${(byterate / 1024).toFixed(3)} MB/s`;
+    timestampPrev = activeCandidatePair.timestamp;
+    bytesPrev = bytesNow;
+    if (byterate > byterateMax) {
+      byterateMax = byterate;
+    }
+  }else{
+    console.log("ice cand. pair is null");
   }
+
 }
 
 function closeDataChannels() {
