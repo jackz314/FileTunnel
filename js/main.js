@@ -1,19 +1,19 @@
 /* eslint no-unused-expressions: 0 */
 'use strict';
 
-let pc;
+let pc; //peer connection
 let transferChannel;
 let msgChannel;
 let fileReader;
 let isInitiator, isTransferAborted = false;
-let isPcOK = false, isBaseConnectionOK = false,
+let isPcReady = false, isSignalServerConnected = false,
   isDataChannelOK = false, 
   isMsgChannelOK = false, 
   isTransferChannelOK = false;
 let willKeepSending = false;
-let remoteFileMetaList = new Array();
+let remoteFileMetaList = [];
 let allowTransfer = false, allowedTransfer = false;
-let fileQueue = new Array();
+let fileQueue = [];
 
 //elements that will be used
 const byterateDiv = document.querySelector('div#byterate');
@@ -54,9 +54,12 @@ let sendPrevOffset = 0;
 let receivePrevSize = 0;
 const byteToMB = 1048576;
 
+//the size of the chunk of file to read at a time
+const chunkSize = 16384 * 2;//todo temp
+
 //webrtc config
 let pcConfig = {
-  'iceServers': [
+  iceServers: [
     {
       urls: 'stun:stun.l.google.com:19302'
     },
@@ -82,20 +85,22 @@ fileDropZone.ondrop = function(e) {
 
   if (e.dataTransfer.items) {
     // Use DataTransferItemList interface to access the file(s)
-    for (var i = 0; i < e.dataTransfer.items.length; i++) {
+    for (let i = 0; i < e.dataTransfer.items.length; i++) {
       // If dropped items aren't files, reject them
-      if (e.dataTransfer.items[i].kind === 'file') {
-        const file = e.dataTransfer.items[i].getAsFile();
+      const item = e.dataTransfer.items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
         console.log('file[' + i + '].name = ' + file.name);
         addToFileQueue(file);
       }else{
-        console.log('selected none files, ignoring them', e.dataTransfer.items[i].kind);
+        console.log('dropped none file type, ignored. Kind:', item.kind);
       }
     }
   } else {
     // Use DataTransfer interface to access the file(s) if the above is not supported
-    for (var i = 0; i < e.dataTransfer.files.length; i++) {
-      console.log('file[' + i + '].name = ' + e.dataTransfer.files[i].name);
+    for (let i = 0; i < e.dataTransfer.files.length; i++) {
+      const file = e.dataTransfer.files[i];
+      console.log('file[' + i + '].name = ' + file.name);
       addToFileQueue(file);
     }
   }
@@ -106,14 +111,12 @@ fileDropZone.ondragover = function() {
   return false;
 }
 
-fileDropZone.ondragleave = function() {
+fileDropZone.ondragleave = function(){
   this.className = 'drop-zone';
   return false;
 }
 
-fileDropZone.onclick = function() {
-  fileInput.click();
-}
+fileDropZone.onclick = () => fileInput.click()
 
 function addToFileQueue(file) {
   if(!file){
@@ -153,7 +156,8 @@ if(tunnelCode === null || tunnelCode.trim() === ''){
 
 roomLabel.textContent = 'Tunnel code: ' + tunnelCode;
 
-roomLabel.onclick = function(){
+roomLabel.onclick = () => {
+  //copy room code to the clipboard
   copyToClipboard(tunnelCode);
   const snackbar = document.getElementById("snackbar");
   snackbar.textContent = 'Copied TunnelCode \"' + tunnelCode + '\" to clipboard!';
@@ -202,14 +206,14 @@ socket.on('full', function(roomName) {
 socket.on('join', function (roomName){
   console.log('Another peer made a request to join roomName ' + roomName);
   console.log('This peer is the initiator of roomName ' + roomName + '!');
-  isBaseConnectionOK = true;
+  isSignalServerConnected = true;
   statusText.textContent = 'Connecting...';
   createPcIfReady();
 });
 
 socket.on('joined', function(roomName) {
   console.log('joined: ' + roomName);
-  isBaseConnectionOK = true;
+  isSignalServerConnected = true;
   isInitiator = false;
   statusText.textContent = 'Connecting...';
 });
@@ -225,22 +229,22 @@ socket.on('msg', function(msg) {
     createPcIfReady();
   } else if (msg.type === 'offer') {//got offer
     console.log('got remote offer sdp');
-    if (!isInitiator /*shouldn't be initiator here (always pass), but just in case*/ && !isPcOK) {
+    if (!isInitiator /*shouldn't be initiator here (always pass), but just in case*/ && !isPcReady) {
       createPcIfReady();
     }
     pc.setRemoteDescription(new RTCSessionDescription(msg));
     createAnswer();
-  } else if (msg.type === 'answer' && isPcOK) {//got answer
+  } else if (msg.type === 'answer' && isPcReady) {//got answer
     console.log('got remote answer sdp');
     pc.setRemoteDescription(new RTCSessionDescription(msg));
-  } else if (msg.type === 'ice' && isPcOK) {//got ice
+  } else if (msg.type === 'ice' && isPcReady) {//got ice
     console.log('got remote ice');
     const candidate = new RTCIceCandidate({
       sdpMLineIndex: msg.label,
       candidate: msg.candidate
     });
     pc.addIceCandidate(candidate);
-  } else if (msg === 'bye' && isPcOK) {//got disconnect signal, disconnect
+  } else if (msg === 'bye' && isPcReady) {//got disconnect signal, disconnect
     handleRemoteDisconnect();
   }
 });
@@ -290,6 +294,10 @@ function resetTransferStuff(){
   receiveProgressContainer.style.display = 'none';
 
   //statistic stuff
+  if (statsInterval) {
+    clearInterval(statsInterval);
+    statsInterval = null;
+  }
   // statsIntervalAcc = null;
   byterateMax = 0;
   // sendSpeed = 0;
@@ -318,40 +326,45 @@ async function handleFileInputChange() {
 
 //start creating peer connection if everything is ready
 function createPcIfReady() {
-  console.log('>>>>>>> createPcIfReady() ', isPcOK, isBaseConnectionOK);
-  if (!isPcOK /*&& typeof localStream !== 'undefined'/*not used for now*/ && isBaseConnectionOK) {
+  console.log('>>>>>>> createPcIfReady() ', isPcReady, isSignalServerConnected);
+  if (!isPcReady /*&& typeof localStream !== 'undefined'/*not used for now*/ && isSignalServerConnected) {
     console.log('>>>>>> creating peer connection');
-    createPc();
+    createPc().then(result => {
+      if(!result){
+        console.log("Create peer connection failed.");
+      }
+    });
   }
 }
 
 //notify remote end to disconnect before window closes, no need to clean up local side since everything is freed by browser
 window.onbeforeunload = function() {
-  sendSignalMsg('bye');
+  disconnect();
 };
 
 async function createPc() {
   try {//create peer connection
-    pc = new RTCPeerConnection();
-    console.log('Created RTCPeerConnnection');
+    pc = new RTCPeerConnection(pcConfig);
+    console.log('Created RTCPeerConnection');
   } catch (e) {
     console.log('Failed to create PeerConnection, exception: ' + e.message);
     alert('Cannot create RTCPeerConnection object.');
-    return;
+    return false;
   }
   console.log('Created local peer connection object pc');
   //pc.addStream(localStream);//not used for now
-  isPcOK = true;
+  isPcReady = true;
 
 //create data channels
   const transferChannelOptions = {
     priority: 'high',
-    negotiated: false,
-    id: 101,//manual symmetric set up
+    negotiated: true,
+    id: 1,//manual symmetric set up
     maxPacketLifeTime: 10000//10 secs
   }
   transferChannel = pc.createDataChannel('transferChannel', transferChannelOptions);
   transferChannel.binaryType = 'arraybuffer';
+  transferChannel.bufferedAmountLowThreshold = chunkSize * 125;
   console.log('Created transfer data channel');
 
   //set channel listeners
@@ -362,10 +375,10 @@ async function createPc() {
 
   const msgChannelOptions = {
     priority: 'medium',
-    negotiated: false,
-    id: 102,//manual symmetric set up
+    negotiated: true,
+    id: 2,//manual symmetric set up
   }
-  //create msg channel
+  //create msg channel, out of band approach
   msgChannel = pc.createDataChannel('msgChannel', msgChannelOptions);
 
   //listeners
@@ -384,10 +397,12 @@ async function createPc() {
   pc.addEventListener('icecandidate', onLocalIce);
   pc.onaddstream = handleRemoteStreamAdded;
   pc.onremovestream = handleRemoteStreamRemoved;
+  
+  return true;
 }
 
 function createOffer(){
-  console.log('creating local offer sdp')
+  console.log('creating local offer, generating local sdp')
   pc.createOffer(setAndSendLocalSdp, onCreateOfferError);
 }
 
@@ -466,14 +481,14 @@ function handleRemoteStreamRemoved(event) {
 // }
 
 function disconnect() {
-  console.log('Hanging up.');
+  console.log('Disconnecting from tunnel.');
   sendSignalMsg('bye');
   closeDataChannels();
   stopPc();
 }
 
 function stopPc() {
-  isPcOK = false;
+  isPcReady = false;
   pc.close();
   pc = null;
 }
@@ -495,9 +510,9 @@ function sendChannelMsg(msg){
 }
 
 function sendFile() {
-  if(fileQueue.length == 0){
+  if(fileQueue.length === 0){
     //all files transferred
-    postSendFile();
+    sendFileComplete();
     return;
   }
   const file = fileQueue[0];
@@ -537,7 +552,6 @@ function sendFile() {
   sendProgress.max = file.size;
   sendProgressContainer.style.display = '';//hide send progress bar
 
-  const chunkSize = 16384 * 2;//todo temp
   fileReader = new FileReader();
   sendFileOffset = 0;
   fileReader.addEventListener('error', error => console.error('Error reading file:', error));
@@ -547,30 +561,40 @@ function sendFile() {
       console.log('file transfer in progress but aborted');
       return;
     }
-    console.log('FileRead.onload ', e);
+    // console.log('FileRead.onload ', e);
     transferChannel.send(e.target.result);
     sendFileOffset += e.target.result.byteLength;
     sendProgress.value = sendFileOffset;
-    console.log('send progress: ', sendFileOffset, sendProgress.value);
-    if (sendFileOffset < file.size) {
-      readSlice(sendFileOffset);
-    }else{
-      //transfer for this file is done, remove this one and continue to the next one
-      fileQueue.shift();
-      transferChannel.send('transfer_done');
-      sendFile();
+    // console.log('send progress: ', sendFileOffset);
+    // console.log('data channel buffered amount', transferChannel.bufferedAmount)
+    if (sendFileOffset < file.size) {//file read is not finished, continue
+      if(transferChannel.bufferedAmount >= chunkSize * 250){//too much is queued in the data channel, wait and start reading later
+        console.log('too much buffered in the data channel, waiting to read later');
+        transferChannel.onbufferedamountlow = () => {//resume reading file when the queue is cleared below the threshold
+          console.log('data channel buffer cleared under threshold, continue reading');
+          readSlice(sendFileOffset);//continue to read
+          transferChannel.onbufferedamountlow = null;
+        }
+      }else{//otherwise continue normal reading and transferring
+        readSlice(sendFileOffset);
+      }
+    }else{//file read is finished, stop this one and move on to the next
+      //transfer for this file is done
+      fileQueue.shift();//remove current file from queue
+      transferChannel.send('[transfer_done]');//indicate transfer done
+      sendFile();//continue to the next one
     }
   });
-  const readSlice = o => {
-    console.log('readSlice ', o);
-    const slice = file.slice(sendFileOffset, o + chunkSize);
+  const readSlice = offset => {
+    // console.log('readSlice', offset);
+    const slice = file.slice(sendFileOffset, offset + chunkSize);
     fileReader.readAsArrayBuffer(slice);
   };
   readSlice(0);//start first
 }
 
-function postSendFile(){
-  console.log('post send file');
+function sendFileComplete(){
+  console.log('files sent');
   byterateDiv.innerHTML = '';
   willKeepSending = false;
   statusText.textContent = 'Transfer complete, waiting for more files.';
@@ -638,18 +662,18 @@ function onReceiveFromTransferChannel(event) {
     console.log('got data even though local client didn\'t accept it. Ignoring it.');
     return;
   }
-  if(remoteFileMetaList.length == 0){//missing remote file meta info, should never happen
+  if(remoteFileMetaList.length === 0){//missing remote file meta info, should never happen
     console.log('missing file meta info, can only receive file');
     return;
   }
-  if(event.data === 'transfer_done'){//transfer of one file is complete
+  if(event.data === '[transfer_done]'){//transfer of one file is complete
     console.log('File transfer complete');
     receiveProgressContainer.style.display = 'none';//hide receive progress bar
     abortButton.style.display = 'none';//hide abort btn
     if (receivedSize === remoteFileMetaList[0].size) {//verify again that we got all the content of the file
       console.log('File' + remoteFileMetaList.name + ' transfer complete');
       const received = new Blob(receiveBuffer);//todo move to stream or other things for larger files
-      receiveBuffer = [];//clear buffer
+      receiveBuffer.length = 0;//clear buffer
       
       //download
       downloadAnchor.href = URL.createObjectURL(received);
@@ -671,15 +695,13 @@ function onReceiveFromTransferChannel(event) {
       if (statsInterval) {
         clearInterval(statsInterval);
         statsInterval = null;
-        // clearInterval(statsIntervalAcc);
-        // statsIntervalAcc = null;
       }
     }else{
       console.log('channel signals file complete, but meta data doesn\'t match, something is wrong');
       //todo handle this
     }
   }else{
-    console.log(`Received data from transfer channel ${event.data.byteLength}`);
+    // console.log(`Received data from transfer channel ${event.data.byteLength}`);
     receiveBuffer.push(event.data);
     receivedSize += event.data.byteLength;
     receiveProgress.value = receivedSize;
@@ -687,7 +709,7 @@ function onReceiveFromTransferChannel(event) {
 }
 
 function onAllDataChannelReady(){
-  if(fileQueue.length == 0){
+  if(fileQueue.length === 0){
     statusText.textContent = 'Connected, waiting for files';
   }else{
     statusText.textContent = 'Files ready, waiting for remote side to accept files...';
@@ -713,7 +735,7 @@ function onTransferChannelStateChange() {
   if (readyState === 'open') {
     isTransferChannelOK = true;
     if(isMsgChannelOK){
-      console.log('teransfer channel ready after msg channel is ready');
+      console.log('transfer channel ready after msg channel is ready');
       onAllDataChannelReady();
     }else{
       isDataChannelOK = false;
@@ -748,13 +770,13 @@ function onDataChannelError(error){
 
 function onReceiveFromMsgChannel(event){
   const msg = event.data;
-  console.log('recieved msg from msg data channel: ' + msg);
+  console.log('received msg from msg data channel: ' + msg);
   if(msg.startsWith('[file-meta]')){//got remote side file meta info, enable accept btn to accept file transfer
-    let spliterPos = msg.indexOf('|');
-    console.log('file meta: size: ' + Number(msg.substring(11, spliterPos)));
+    let splitterPos = msg.indexOf('|');
+    console.log('file meta: size: ' + Number(msg.substring(11, splitterPos)));
     remoteFileMetaList.push({
-      size: Number(msg.substring(11, spliterPos)),
-      name: msg.substr(spliterPos + 1)
+      size: Number(msg.substring(11, splitterPos)),
+      name: msg.substr(splitterPos + 1)
     });
     if(!allowedTransfer){//only show for the first time
       statusText.textContent = 'Files incoming, click accept to proceed.';
@@ -774,7 +796,7 @@ function onReceiveFromMsgChannel(event){
 
 // display byterate statistics.
 async function displayStats() {
-  console.log('displaying stats');
+  // console.log('displaying stats');
   if (pc && pc.iceConnectionState === 'connected') {
     const stats = await pc.getStats();
     let activeCandidatePair;
@@ -813,6 +835,7 @@ function closeDataChannels() {
 /////////////////////////////////////////
 //for the future
 //gets local user media and signals gotStream
+/*
 function getLocalMedia(){
   navigator.mediaDevices.getUserMedia({
     audio: false,
@@ -832,4 +855,4 @@ function gotLocalStream(stream) {
   if (isInitiator) {
     maybeStart();
   }
-}
+}*/
