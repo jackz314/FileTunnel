@@ -1,6 +1,6 @@
 # FileTunnel
 
-### Now live at [filetunnel.appspot.com](https://filetunnel.appspot.com/) or [www.filetunnel.net](https://www.filetunnel.net/)
+### Now live at [filetunnel.appspot.com](https://filetunnel.appspot.com/)
 
 FileTunnel - 2019 HackMerced IV
 
