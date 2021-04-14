@@ -168,7 +168,7 @@ roomLabel.onclick = () => {
   setTimeout(function(){ snackbar.className = snackbar.className.replace("show", ""); }, 3000);
 };
 
-let socket = io.connect();
+let socket = io();
 
 function copyToClipboard(str) {
   const el = document.createElement('textarea');
@@ -190,7 +190,7 @@ function makeRandomRoomId() {
 }
 
 socket.emit('create or join', tunnelCode);
-console.log('Attempted to create or  join roomName', tunnelCode);
+console.log('Attempted to create or join roomName', tunnelCode);
 
 
 //start of socket events

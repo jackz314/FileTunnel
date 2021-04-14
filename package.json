@@ -4,7 +4,7 @@
   "description": "FileTunnel",
   "dependencies": {
     "node-static": "^0.7.11",
-    "socket.io": "^2.3.0"
+    "socket.io": "^4.0.1"
   },
   "engines": {
     "node": ">=12"
@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@google-cloud/nodejs-repo-tools": "3.3.0",
-    "puppeteer": "^2.0.0"
+    "puppeteer": "^8.0.0"
   },
   "cloud-repo-tools": {
     "test": {
