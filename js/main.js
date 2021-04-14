@@ -7,8 +7,8 @@ let msgChannel;
 let fileReader;
 let isInitiator, isTransferAborted = false;
 let isPcReady = false, isSignalServerConnected = false,
-  isDataChannelOK = false, 
-  isMsgChannelOK = false, 
+  isDataChannelOK = false,
+  isMsgChannelOK = false,
   isTransferChannelOK = false;
 let willKeepSending = false;
 let remoteFileMetaList = [];
@@ -208,7 +208,7 @@ socket.on('full', function(roomName) {
 
 socket.on('join', function (roomName){
   console.log('Another peer made a request to join roomName ' + roomName);
-  console.log('This peer is the initiator of roomName ' + roomName + '!');
+  console.log('Current peer is the initiator of roomName ' + roomName + '!');
   isSignalServerConnected = true;
   statusText.textContent = 'Connecting...';
   createPcIfReady();
@@ -333,7 +333,7 @@ async function handleFileInputChange() {
       const file = fileList[i];
       console.log('file[' + i + '].name = ' + file.name);
       addToFileQueue(file);
-    } 
+    }
   }
 }
 
@@ -410,7 +410,7 @@ async function createPc() {
   pc.addEventListener('icecandidate', onLocalIce);
   pc.onaddstream = handleRemoteStreamAdded;
   pc.onremovestream = handleRemoteStreamRemoved;
-  
+
   return true;
 }
 
@@ -456,7 +456,7 @@ function onLocalIce(iceContent) {
 
 function handleRemoteStreamAdded(event) {
   console.log('Remote stream added.');
-  remoteStream = event.stream;
+  let remoteStream = event.stream;
   remoteVideo.srcObject = remoteStream;
 }
 
@@ -561,14 +561,14 @@ function sendFile() {
     willKeepSending = false;
     return;
   }
-  
+
   statusText.textContent = 'Sending file...';
   byterateDiv.innerHTML = '';
 
   sendProgressLabel.textContent = 'Send (' + fileQueue.length + ')';
 
   prepareStatisticStuff();
-  
+
   willKeepSending = true;
 
   sendProgress.max = file.size;
@@ -714,7 +714,7 @@ function onReceiveFromTransferChannel(event) {
       const received = new Blob(receiveBuffer);//todo move to stream or other things for larger files
       receiveBuffer.length = 0;//clear buffer
       receivedSize = 0;
-      
+
       //download
       downloadAnchor.href = URL.createObjectURL(received);
       downloadAnchor.download = remoteFileMetaList[0].name;
